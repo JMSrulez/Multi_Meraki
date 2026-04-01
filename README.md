@@ -1,4 +1,4 @@
-# Meraki Personal Dashboard
+#Cisco Meraki Personal Dashboard
 
 Dashboard personnel pour agréger l'inventaire de plusieurs organisations Cisco Meraki avec cache local SQLite.
 
