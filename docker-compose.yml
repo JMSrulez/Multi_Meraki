@@ -1,1 +1,17 @@
+services:
+  meraki-dashboard:
+    build: .
+    container_name: meraki-dashboard
+    ports:
+      - "8000:8000"
+    environment:
+      MERAKI_API_KEY: ${MERAKI_API_KEY:-}
+      DATABASE_PATH: /data/meraki.db
+      MERAKI_BASE_URL: https://api.meraki.com/api/v1
+    volumes:
+      - meraki_data:/data
+    restart: unless-stopped
+
+volumes:
+  meraki_data:
 
