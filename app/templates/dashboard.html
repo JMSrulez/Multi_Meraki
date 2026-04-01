@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meraki Personal Dashboard</title>
+  <link rel="preconnect" href="https://api.fontshare.com">
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#content">Aller au contenu</a>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 64 64" aria-label="Meraki Personal Dashboard" role="img">
+          <rect x="8" y="8" width="48" height="48" rx="14" stroke="currentColor" stroke-width="5" fill="none"></rect>
+          <path d="M20 40V24l12 10 12-10v16" stroke="currentColor" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+        <div>
+          <p class="eyebrow">Cisco Meraki</p>
+          <h1>Personal Dashboard</h1>
+        </div>
+      </div>
+      <nav class="side-nav" aria-label="Navigation principale">
+        <a class="active" href="#overview">Vue générale</a>
+      </nav>
+      <div class="side-note">
+        <p>Inventaire local.</p>
+        <p>Refresh manuel.</p>
+      </div>
+    </aside>
+
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Inventaire multi-organisation</p>
+        <p class="timestamp">Dernière synchro : <span id="last-sync">{{ last_sync or 'Jamais' }}</span></p>
+      </div>
+      <div class="topbar-actions">
+        <button type="button" class="btn btn-secondary" data-theme-toggle aria-label="Basculer le thème"><span aria-hidden="true">◐</span></button>
+        <button type="button" class="btn btn-primary" id="refresh-all">Refresh forcé</button>
+      </div>
+    </header>
+
+    <main class="main" id="content">
+      <section class="hero-card" id="overview">
+        <div>
+          <p class="eyebrow">Résumé</p>
+          <h2>Organisations Meraki</h2>
+          <p class="hero-copy">Cette vue lit uniquement les données SQLite locales. L'API Meraki n'est appelée que lors d'un refresh explicite.</p>
+        </div>
+        <div class="hero-stats">
+          <article>
+            <span class="stat-label">Organisations</span>
+            <strong id="org-count">{{ rows|length }}</strong>
+          </article>
+          <article>
+            <span class="stat-label">API</span>
+            <strong>{{ 'Configurée' if api_configured else 'Non configurée' }}</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Inventaire</p>
+            <h3>Liste des organisations</h3>
+          </div>
+          <p class="panel-meta">Nombre d'équipements stocké localement.</p>
+        </div>
+
+        {% if rows %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Organisation</th>
+                <th>Licensing</th>
+                <th>Équipements</th>
+                <th>Dernière synchro</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="org-table-body">
+              {% for row in rows %}
+              <tr>
+                <td>{{ row.name }}</td>
+                <td>{{ row.licensing_model or 'n/a' }}</td>
+                <td class="num">{{ row.device_count }}</td>
+                <td>{{ row.last_synced_at or 'Jamais' }}</td>
+                <td><button class="btn btn-ghost refresh-one" data-org-id="{{ row.id }}">Refresh</button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <p>Aucune donnée locale pour le moment.</p>
+          <p>Configure la clé API puis lance un refresh forcé.</p>
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="panel status-panel" id="status-box">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">État</p>
+            <h3>Journal rapide</h3>
+          </div>
+        </div>
+        <p id="status-message">Prêt.</p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const toggle = document.querySelector('[data-theme-toggle]');
+      let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      root.setAttribute('data-theme', theme);
+      toggle?.addEventListener('click', () => {
+        theme = theme === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', theme);
+      });
+    })();
+
+    const statusMessage = document.getElementById('status-message');
+    const lastSync = document.getElementById('last-sync');
+    const orgCount = document.getElementById('org-count');
+
+    async function reloadTable() {
+      const response = await fetch('/api/organizations');
+      const data = await response.json();
+      lastSync.textContent = data.last_sync || 'Jamais';
+      orgCount.textContent = data.items.length;
+      const body = document.getElementById('org-table-body');
+      if (!body) {
+        window.location.reload();
+        return;
+      }
+      body.innerHTML = data.items.map(row => `
+        <tr>
+          <td>${row.name}</td>
+          <td>${row.licensing_model || 'n/a'}</td>
+          <td class="num">${row.device_count}</td>
+          <td>${row.last_synced_at || 'Jamais'}</td>
+          <td><button class="btn btn-ghost refresh-one" data-org-id="${row.id}">Refresh</button></td>
+        </tr>
+      `).join('');
+      bindRefreshButtons();
+    }
+
+    async function postRefresh(url, message) {
+      statusMessage.textContent = message;
+      const response = await fetch(url, { method: 'POST' });
+      const data = await response.json();
+      statusMessage.textContent = `Terminé : ${JSON.stringify(data)}`;
+      await reloadTable();
+    }
+
+    document.getElementById('refresh-all')?.addEventListener('click', async () => {
+      try {
+        await postRefresh('/api/refresh', 'Refresh global en cours...');
+      } catch (error) {
+        statusMessage.textContent = `Erreur : ${error}`;
+      }
+    });
+
+    function bindRefreshButtons() {
+      document.querySelectorAll('.refresh-one').forEach(button => {
+        button.addEventListener('click', async () => {
+          try {
+            await postRefresh(`/api/refresh/${button.dataset.orgId}`, `Refresh ${button.dataset.orgId} en cours...`);
+          } catch (error) {
+            statusMessage.textContent = `Erreur : ${error}`;
+          }
+        });
+      });
+    }
+
+    bindRefreshButtons();
+  </script>
+</body>
+</html>
